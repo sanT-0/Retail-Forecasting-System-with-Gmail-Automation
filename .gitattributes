@@ -1,0 +1,3 @@
+# Force GitHub Linguist to recognize JSON files as JSON language
+*.json linguist-language=JSON
+*.json linguist-generated=false
