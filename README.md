@@ -1,4 +1,4 @@
-# 🛒 Future Retail Sales Forecasting
+# 🛒 Future Retail Sales Forecasting - by sanT
 
 > **An End-to-End Machine Learning Suite for Retail Sales Prediction**
 
