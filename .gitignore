@@ -1,0 +1,54 @@
+# 🛒 Retail Sales Forecasting — Git Ignore
+# ------------------------------------------------------------------------------
+
+# ── Sensitive Files ───────────────────────────────────────────────────────────
+.env
+*.json.key
+credentials.json
+client_secret.json
+
+# ── Python / Virtual Environment ──────────────────────────────────────────────
+__pycache__/
+*.py[cod]
+*$py.class
+.venv/
+env/
+venv/
+ENV/
+.env/
+build/
+dist/
+*.egg-info/
+.mypy_cache/
+.pytest_cache/
+
+# ── N8N / Docker Automation ──────────────────────────────────────────────────
+# Ignore persistent n8n database, encryption keys, and credentials stored locally
+n8n_automation/n8n_data/
+n8n_automation/api/shared/uploads/
+n8n_automation/api/shared/outputs/
+
+# ── ML Outputs & Datasets ──────────────────────────────────────────────────────
+# Ignore large outputs/reports and raw data for cleaner repo
+outputs/
+reports/
+datasets/*.csv
+# Exception: Include sample datasets if you want to share them
+!datasets/sample_data.csv
+
+# ── OS Generated Files ────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+desktop.ini
+
+# ── VS Code / IDE ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+.project
+.pydevproject
+.settings/
+*.swp
+*.pvt
+
+# ──────────────────────────────────────────────────────────────────────────────
+# End of Git Ignore

@@ -1,0 +1,115 @@
+version: "3.9"
+
+# ═══════════════════════════════════════════════════════════════════════════════
+#  Future Retail Sales Forecasting — N8N Automation Stack
+#  Created by: sanT
+#
+#  Services:
+#    • n8n        → Automation engine  (http://localhost:5678)
+#    • forecast   → Flask ML API       (http://localhost:8000)
+#
+#  Usage:
+#    docker compose up -d
+#    Open http://localhost:5678 → import workflow → connect Gmail
+# ═══════════════════════════════════════════════════════════════════════════════
+
+services:
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # N8N — Automation Platform (latest)
+  # ─────────────────────────────────────────────────────────────────────────────
+  n8n:
+    image: n8nio/n8n:latest
+    container_name: retail_n8n
+    restart: unless-stopped
+    ports:
+      - "5678:5678"
+    environment:
+      # Basic timezone (change to your timezone)
+      - GENERIC_TIMEZONE=Asia/Kolkata
+      - TZ=Asia/Kolkata
+
+      # n8n base URL (used for webhook nodes)
+      - N8N_HOST=localhost
+      - N8N_PORT=5678
+      - N8N_PROTOCOL=http
+      - WEBHOOK_URL=http://localhost:5678/
+
+      # Security — basic auth for n8n UI (Configured in root .env)
+      - N8N_BASIC_AUTH_ACTIVE=true
+      - N8N_BASIC_AUTH_USER=${N8N_BASIC_AUTH_USER}
+      - N8N_BASIC_AUTH_PASSWORD=${N8N_BASIC_AUTH_PASSWORD}
+
+      # Workflow execution settings
+      - EXECUTIONS_PROCESS=main
+      - EXECUTIONS_DATA_SAVE_ON_ERROR=all
+      - EXECUTIONS_DATA_SAVE_ON_SUCCESS=all
+      - EXECUTIONS_DATA_SAVE_MANUAL_EXECUTIONS=true
+      - EXECUTIONS_DATA_MAX_AGE=336
+
+      # Allow importing community nodes
+      - N8N_COMMUNITY_PACKAGES_ALLOW_TOOL_USAGE=true
+
+      # API URL for internal container-to-container communication
+      - FORECAST_API_URL=http://forecast_api:8000
+
+    env_file:
+      - ../.env
+
+    volumes:
+      # Persistent n8n data (credentials, workflows, execution history)
+      - n8n_data:/home/node/.n8n
+      # Shared volume: n8n reads output images written by Flask API
+      - ./api/shared:/shared
+    depends_on:
+      forecast_api:
+        condition: service_healthy
+    networks:
+      - retail_net
+
+  # ─────────────────────────────────────────────────────────────────────────────
+  # Forecast API — Flask ML Pipeline Wrapper
+  # ─────────────────────────────────────────────────────────────────────────────
+  forecast_api:
+    build:
+      context: ./api
+      dockerfile: Dockerfile
+    container_name: retail_forecast_api
+    restart: unless-stopped
+    ports:
+      - "8000:8000"
+    environment:
+      - PYTHONUNBUFFERED=1
+      - SHARED_DIR=/shared
+      - TZ=Asia/Kolkata
+    env_file:
+      - ../.env
+    volumes:
+      # Bind-mount project source as read-only (code, configs, etc.)
+      - ../:/app/project:ro
+      # Writable override for outputs — pipeline writes CSVs and chart PNGs here
+      - ../outputs:/app/project/outputs
+      # Shared output volume (pipeline writes PNGs here; n8n reads them)
+      - ./api/shared:/shared
+    healthcheck:
+      test: ["CMD", "curl", "-f", "http://localhost:8000/health"]
+      interval: 15s
+      timeout: 10s
+      retries: 5
+      start_period: 30s
+    networks:
+      - retail_net
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Named Volumes
+# ─────────────────────────────────────────────────────────────────────────────
+volumes:
+  n8n_data:
+    driver: local
+
+# ─────────────────────────────────────────────────────────────────────────────
+# Network
+# ─────────────────────────────────────────────────────────────────────────────
+networks:
+  retail_net:
+    driver: bridge

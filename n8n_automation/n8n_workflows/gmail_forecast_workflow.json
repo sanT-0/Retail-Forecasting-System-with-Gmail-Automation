@@ -1,0 +1,565 @@
+{
+  "name": "Retail Sales Forecast — Gmail Automation",
+  "nodes": [
+    {
+      "parameters": {
+        "pollTimes": {
+          "item": [
+            {
+              "mode": "everyMinute"
+            }
+          ]
+        },
+        "simple": false,
+        "filters": {
+          "q": "subject:(FORECAST OR Forecast OR forecast)",
+          "readStatus": "unread"
+        },
+        "options": {
+          "downloadAttachments": true
+        }
+      },
+      "id": "2dc806c9-a63e-456c-befc-9ff53abfeb04",
+      "name": "Gmail Trigger",
+      "type": "n8n-nodes-base.gmailTrigger",
+      "typeVersion": 1,
+      "position": [
+        8288,
+        3648
+      ],
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "xr06KshqT3EgAkyN",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 1 — Inspect attachments + stop self-triggering loops.\n// n8n Code nodes DROP binary by default.\n// We return { json, binary } to carry the CSV file forward.\n\nconst item = $input.item;\nlet triggerData = {};\ntry { triggerData = $('Gmail Trigger').first() || {}; } catch(e) {}\nconst jsonData = triggerData.json || item.json || {};\nconst binaryData = triggerData.binary || item.binary || {};\n\nconst subject = (jsonData.subject || '').toLowerCase();\nconst from    = jsonData.from?.value?.[0]?.address || '';\nconst toAddr  = (jsonData.to  || [])[0]?.address   || '';\n\n// Loop guard — stop bot reply emails re-triggering the workflow\nconst isBotReply = (\n  subject.includes('no csv attached') ||\n  subject.includes('forecast ready')  ||\n  subject.includes('forecast failed') ||\n  (subject.startsWith('re:') && subject.includes('forecast'))\n);\n\nif (isBotReply) {\n  return {\n    json: {\n      hasCsv: false,\n      isLoop: true,\n      csvBinaryKey: null,\n      csvFileName: null,\n      allBinaryKeys: [],\n      fromEmail: from,\n      toEmail: toAddr,\n      subject: jsonData.subject || ''\n    },\n    binary: {}\n  };\n}\n\n// Detect CSV in binary data (any key, by fileName or mimeType)\nconst csvBinaryKey = Object.keys(binaryData).find(k => {\n  const b = binaryData[k];\n  const name = (b.fileName || b.name || '').toLowerCase();\n  const mime = (b.mimeType || '').toLowerCase();\n  return name.endsWith('.csv') || mime === 'text/csv' || mime === 'application/csv';\n});\n\n// Fallback: check $json.attachments[] array (older n8n versions)\nlet csvJsonMeta = null;\nconst jsonAttachments = jsonData.attachments || [];\nif (!csvBinaryKey && Array.isArray(jsonAttachments)) {\n  csvJsonMeta = jsonAttachments.find(a => {\n    const name = (a.name || a.filename || '').toLowerCase();\n    const mime = (a.mimeType || '').toLowerCase();\n    return name.endsWith('.csv') || mime === 'text/csv' || mime === 'application/csv';\n  });\n}\n\nconst hasCsv = !!(csvBinaryKey || csvJsonMeta);\n\nlet csvFileName = null;\nif (csvBinaryKey) {\n  csvFileName = binaryData[csvBinaryKey].fileName ||\n                binaryData[csvBinaryKey].name     ||\n                (csvBinaryKey + '.csv');\n} else if (csvJsonMeta) {\n  csvFileName = csvJsonMeta.name || csvJsonMeta.filename || 'attachment.csv';\n}\n\nconst allBinaryKeys = Object.keys(binaryData);\n\n// Return { json, binary } — binary MUST be returned or downstream nodes lose the file\nreturn {\n  json: {\n    hasCsv,\n    isLoop: false,\n    csvBinaryKey: csvBinaryKey || null,\n    csvFileName,\n    allBinaryKeys,\n    subject: jsonData.subject || '',\n    fromEmail: from,\n    toEmail: toAddr\n  },\n  binary: binaryData\n};"
+      },
+      "id": "2bcc5446-b1c8-49a5-9653-a3ba5575a9e4",
+      "name": "Inspect Attachments",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8560,
+        3424
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": true,
+            "leftValue": "",
+            "typeValidation": "strict",
+            "version": 1
+          },
+          "conditions": [
+            {
+              "id": "has-csv-bool",
+              "leftValue": "={{ $json.hasCsv }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "6f14dbb9-bde4-49c8-a13e-c84bdf5ff61f",
+      "name": "Has CSV Attachment?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        8592,
+        3664
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.fromEmail }}",
+        "subject": "=Send Proper Format — ⚠️ No CSV Attached",
+        "message": "=<html><head><meta charset=\"UTF-8\"></head><body style=\"font-family:'Segoe UI',Arial,sans-serif;margin:0;padding:24px;background:#f4f6f9;\"><div style=\"background:white;border-radius:10px;padding:32px;max-width:600px;margin:auto;box-shadow:0 2px 12px rgba(0,0,0,0.08);border-left:5px solid #e74c3c;\"><h2 style=\"margin:0 0 20px 0;color:#e74c3c;font-size:20px;\">⚠️ No CSV File Found</h2><p style=\"margin:0 0 12px 0;color:#2d3748;font-size:15px;\">Hi there,</p><p style=\"margin:0 0 24px 0;color:#4a5568;font-size:14px;line-height:1.6;\">Your email with subject <strong style=\"color:#2d3748;\">{{ $json.subject }}</strong> was received but <strong style=\"color:#e74c3c;\">no CSV file attachment</strong> was found.</p><h3 style=\"margin:0 0 12px 0;color:#2d3748;font-size:15px;font-weight:700;\">How to send your dataset:</h3><ol style=\"margin:0 0 20px 0;padding-left:20px;color:#4a5568;font-size:14px;line-height:2;\"><li>Attach a <code style=\"background:#edf2f7;color:#2b6cb0;padding:2px 7px;border-radius:4px;\">.csv</code> file to your email</li><li>Make sure the subject includes <code style=\"background:#edf2f7;color:#2b6cb0;padding:2px 7px;border-radius:4px;\">forecast</code></li><li>Optional: <code style=\"background:#edf2f7;color:#2b6cb0;padding:2px 7px;border-radius:4px;\">forecast:full:60</code> → full mode, 60 periods</li></ol><p style=\"margin:0 0 24px 0;color:#718096;font-size:13px;font-style:italic;\">Your CSV should have at least a <strong>date column</strong> and a <strong>numeric sales/revenue column</strong>.</p><hr style=\"border:none;border-top:1px solid #e2e8f0;margin:0 0 16px 0;\"><p style=\"margin:0;color:#a0aec0;font-size:12px;\">Retail Sales Forecasting Bot | Powered by n8n + ML Pipeline</p></div></body></html>",
+        "options": {}
+      },
+      "id": "7c8a3119-8fac-4107-9d35-a6d61e11263b",
+      "name": "Reply — No Attachment",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        8768,
+        3792
+      ],
+      "webhookId": "b0787fbb-913a-4611-a258-bc85a7768bd4",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "xr06KshqT3EgAkyN",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 2 — Parse subject params + forward binary to HTTP Request.\n\nconst item = $input.item;\nconst j    = item.json;\nconst subject = j.subject || '';\n\nlet mode    = 'quick';\nlet periods = 30;\n\nconst paramMatch = subject.match(/\\[?FORECAST:?([a-zA-Z]+)?:?(\\d+)?\\]?/i);\nif (paramMatch) {\n  if (paramMatch[1] && ['quick','full'].includes(paramMatch[1].toLowerCase())) {\n    mode = paramMatch[1].toLowerCase();\n  }\n  if (paramMatch[2]) {\n    const p = parseInt(paramMatch[2]);\n    if (!isNaN(p) && p >= 1 && p <= 365) periods = p;\n  }\n}\n\nconst csvFileName  = j.csvFileName  || 'attachment.csv';\nconst csvBinaryKey = j.csvBinaryKey || 'attachment_0';\nconst datasetName  = csvFileName.replace(/\\.csv$/i, '').replace(/[^a-zA-Z0-9_-]/g, '_');\n\n// MUST return binary so HTTP Request node can send the CSV file\nreturn {\n  json: {\n    mode,\n    periods,\n    datasetName,\n    csvAttachmentName: csvFileName,\n    csvBinaryKey,\n    fromEmail: j.fromEmail || '',\n    toEmail:   j.toEmail   || '',\n    originalSubject: subject,\n    emailDate: new Date().toISOString()\n  },\n  binary: item.binary\n};"
+      },
+      "id": "3d1dabac-002f-4d92-b32a-3c541051d2db",
+      "name": "Parse Email & Params",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        8768,
+        3552
+      ]
+    },
+    {
+      "parameters": {
+        "method": "POST",
+        "url": "http://forecast_api:8000/forecast",
+        "sendBody": true,
+        "contentType": "multipart-form-data",
+        "bodyParameters": {
+          "parameters": [
+            {
+              "parameterType": "formBinaryData",
+              "name": "file",
+              "inputDataFieldName": "={{ $json.csvBinaryKey || 'attachment_0' }}"
+            },
+            {
+              "name": "mode",
+              "value": "={{ $json.mode }}"
+            },
+            {
+              "name": "periods",
+              "value": "={{ $json.periods }}"
+            },
+            {
+              "name": "dataset_name",
+              "value": "={{ $json.datasetName }}"
+            }
+          ]
+        },
+        "options": {
+          "response": {
+            "response": {
+              "neverError": true,
+              "responseFormat": "text"
+            }
+          },
+          "timeout": 600000
+        }
+      },
+      "id": "2d55d739-f94e-4e6e-a8d6-f8da85ac9a5e",
+      "name": "POST to Forecast API",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9056,
+        3600
+      ],
+      "alwaysOutputData": false
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 3 — Parse API response safely\nlet apiResponseRaw = $input.item.json.data || $input.item.json.response || $input.item.json;\nlet apiResponse;\n\ntry {\n  apiResponse = (typeof apiResponseRaw === 'string') ? JSON.parse(apiResponseRaw) : apiResponseRaw;\n} catch (e) {\n  apiResponse = { success: false, error: \"Failed to parse API response: \" + String(apiResponseRaw).substring(0, 500) };\n}\n\nreturn { \n  json: apiResponse \n};"
+      },
+      "id": "05f44ce5-7e97-4925-92a8-a95e06ad234c",
+      "name": "Parse API Response",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9056,
+        3824
+      ]
+    },
+    {
+      "parameters": {
+        "conditions": {
+          "options": {
+            "caseSensitive": false,
+            "leftValue": "",
+            "typeValidation": "strict"
+          },
+          "conditions": [
+            {
+              "id": "api-success-bool",
+              "leftValue": "={{ $json.success }}",
+              "rightValue": true,
+              "operator": {
+                "type": "boolean",
+                "operation": "equals"
+              }
+            }
+          ],
+          "combinator": "and"
+        },
+        "options": {}
+      },
+      "id": "1de62acf-0bf3-4d69-b7db-55de4a09a2a4",
+      "name": "API Success?",
+      "type": "n8n-nodes-base.if",
+      "typeVersion": 2,
+      "position": [
+        9072,
+        4032
+      ]
+    },
+    {
+      "parameters": {
+        "jsCode": "// STEP 4 — Prepare details for email.\nconst apiResponse = $input.item.json;\nconst charts = apiResponse.charts || [];\nconst priorityOrder = ['forecast', 'comparison', 'error_dist', 'period_revenue', 'time_series', 'acf_pacf'];\n\n// Sort charts\nconst sortedCharts = [...charts].sort((a, b) => {\n  const idxA = priorityOrder.findIndex(k => (a.filename || '').toLowerCase().includes(k));\n  const idxB = priorityOrder.findIndex(k => (b.filename || '').toLowerCase().includes(k));\n  return (idxA === -1 ? 999 : idxA) - (idxB === -1 ? 999 : idxB);\n});\n\nconst chartUrls = sortedCharts.slice(0, 5).map(c => ({\n  url:      `http://forecast_api:8000/outputs/${c.run_id}/${c.filename}`,\n  filename: c.filename,\n  run_id:   c.run_id\n}));\n\nconst leaderboard = apiResponse.leaderboard || [];\nconst medals = ['🥇','🥈','🥉','4️⃣','5️⃣','6️⃣','7️⃣','8️⃣','9️⃣','🔟'];\nlet leaderboardHtml = '';\nif (leaderboard.length > 0) {\n  leaderboardHtml = `<table style=\"width:100%;border-collapse:collapse;font-size:13px;\"><thead><tr style=\"background:#2d3748;color:white;\"><th style=\"padding:8px;text-align:left;\">#</th><th style=\"padding:8px;text-align:left;\">Model</th><th style=\"padding:8px;text-align:right;\">RMSE</th><th style=\"padding:8px;text-align:right;\">R²</th></tr></thead><tbody>${leaderboard.slice(0,10).map((m, i) => `<tr style=\"background:${i%2===0?'#f7fafc':'white'};\"><td style=\"padding:8px;\">${medals[i]||i+1}</td><td style=\"padding:8px;font-weight:${i===0?'bold':'normal'}\">${m.model}</td><td style=\"padding:8px;text-align:right;font-family:monospace;\">${Number(m.rmse).toLocaleString('en-IN',{maximumFractionDigits:2})}</td><td style=\"padding:8px;text-align:right;font-family:monospace;\">${Number(m.r2).toFixed(4)}</td></tr>`).join('')}</tbody></table>`;\n}\n\n// Generate Recommendations HTML\nconst recs = apiResponse.recommendations || [];\nlet recommendationsHtml = '';\nif (recs.length > 0) {\n  recommendationsHtml = `<div style=\"display:grid;grid-template-columns:1fr;gap:12px;margin:16px 0;\">` + \n    recs.map(r => `\n    <div style=\"background:#f8fafc;border-left:4px solid ${r.color || '#4299e1'};padding:12px;border-radius:6px;\">\n      <div style=\"display:flex;align-items:center;margin-bottom:4px;\">\n        <span style=\"font-size:18px;margin-right:8px;\">${r.icon || '🚀'}</span>\n        <strong style=\"color:#2d3748;font-size:14px;\">${r.title}</strong>\n      </div>\n      <p style=\"margin:0;color:#4a5568;font-size:12px;line-height:1.4;\">${r.description}</p>\n      ${r.tooltip ? `<div style=\"margin-top:6px;font-size:11px;color:${r.color || '#4299e1'};font-weight:600;\">→ ${r.tooltip}</div>` : ''}\n    </div>`).join('') + \n    `</div>`;\n}\n\nfunction fmt(v) {\n  if (!v) return '—';\n  if (v >= 1e7) return '₹' + (v/1e7).toFixed(2) + ' Cr';\n  if (v >= 1e5) return '₹' + (v/1e5).toFixed(2) + ' L';\n  return '₹' + Number(v).toLocaleString('en-IN',{maximumFractionDigits:2});\n}\n\n// Get data from Parse node\nconst parseNode = $('Parse Email & Params').item.json;\n\nreturn {\n  json: {\n    ...apiResponse,\n    chartUrls,\n    chartCount: chartUrls.length,\n    leaderboardHtml,\n    recommendationsHtml,\n    totalForecast: fmt(apiResponse.total_forecast),\n    avgForecast:   fmt(apiResponse.avg_forecast),\n    fromEmail:     parseNode.fromEmail,\n    toEmail:       parseNode.toEmail,\n    originalSubject: parseNode.originalSubject\n  }\n};"
+      },
+      "id": "488d757e-b5ae-4166-8126-069360f95169",
+      "name": "Prepare Chart List",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9024,
+        3424
+      ]
+    },
+    {
+      "parameters": {
+        "url": "={{ $json.chartUrls[0].url }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "chart_0"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "a990a4d6-3234-4f22-a40f-eb1f1d1a9c20",
+      "name": "Fetch Chart 1 (Forecast)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9312,
+        3456
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Prepare Chart List').item.json.chartUrls[1] ? $('Prepare Chart List').item.json.chartUrls[1].url : 'http://forecast_api:8000/health' }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "chart_1"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "e3bc0bf0-26bc-4530-8cff-60d5fecc4ac6",
+      "name": "Fetch Chart 2 (Comparison)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9552,
+        3456
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "url": "={{ $('Prepare Chart List').item.json.chartUrls[2] ? $('Prepare Chart List').item.json.chartUrls[2].url : 'http://forecast_api:8000/health' }}",
+        "options": {
+          "response": {
+            "response": {
+              "responseFormat": "file",
+              "outputPropertyName": "chart_2"
+            }
+          },
+          "timeout": 30000
+        }
+      },
+      "id": "0216e424-dcdb-495b-83ff-7baad90f4b6f",
+      "name": "Fetch Chart 3 (Error Dist)",
+      "type": "n8n-nodes-base.httpRequest",
+      "typeVersion": 4.2,
+      "position": [
+        9552,
+        3728
+      ],
+      "continueOnFail": true
+    },
+    {
+      "parameters": {
+        "jsCode": "const apiData = $('Prepare Chart List').item.json;\nconst binaryData = $input.item.binary || {};\n\n// Generate Market Trend HTML\nconst trendPct = apiData.market_trend_pct || 0;\nconst trendDir = apiData.market_trend_direction || 'higher';\nconst trendColor = trendDir === 'higher' ? '#48bb78' : '#e53e3e';\nconst trendIcon  = trendDir === 'higher' ? '📈' : '📉';\n\nconst marketTrendHtml = `\n<div style=\"background:#ffffff;border-radius:10px;padding:20px;text-align:center;border:1px solid #e2e8f0;margin-bottom:20px;box-shadow:0 4px 6px -1px rgba(0,0,0,0.1);border-top: 4px solid ${trendColor};\">\n  <div style=\"font-size:14px;color:#718096;text-transform:uppercase;letter-spacing:1px;margin-bottom:8px;\">Market Trend Analysis</div>\n  <div style=\"font-size:32px;font-weight:800;color:${trendColor};\">\n    ${trendIcon} ${trendPct}% ${trendDir.toUpperCase()}\n  </div>\n  <div style=\"font-size:13px;color:#a0aec0;margin-top:6px;\">Comparing Predicted Average vs. Historical Average</div>\n</div>\n`;\n\n// Collect all valid binary property names for attachment\nconst attachmentKeys = Object.keys(binaryData).filter(key => \n  key.startsWith('chart_') && binaryData[key].data\n).join(',');\n\nreturn {\n  json: {\n    toEmail:        apiData.fromEmail,\n    subject:        `✅Foresee Ready: ${apiData.dataset} | Best: ${apiData.best_model} | RMSE: ${Number(apiData.rmse).toLocaleString('en-IN')}`,\n    leaderboardHtml: apiData.leaderboardHtml,\n    recommendationsHtml: apiData.recommendationsHtml,\n    marketTrendHtml,\n    dataset:        apiData.dataset,\n    bestModel:      apiData.best_model,\n    rmse:           apiData.rmse,\n    r2:             apiData.r2,\n    totalForecast:  apiData.totalForecast,\n    avgForecast:    apiData.avgForecast,\n    forecastPeriods: apiData.forecast_periods,\n    dateFrom:       apiData.date_from,\n    dateTo:         apiData.date_to,\n    mode:           apiData.mode,\n    runId:          apiData.run_id,\n    elapsedS:       apiData.elapsed_s,\n    chartCount:     apiData.chartCount,\n    plainText:      apiData.summary_text,\n    attachments:    attachmentKeys\n  },\n  binary: binaryData  // MUST forward binary so email node gets the charts\n};"
+      },
+      "id": "04917803-7574-4380-84b8-d291711c6105",
+      "name": "Build Email HTML Body",
+      "type": "n8n-nodes-base.code",
+      "typeVersion": 2,
+      "position": [
+        9568,
+        3968
+      ]
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.toEmail }}",
+        "subject": "={{ $json.subject }}",
+        "message": "=<html>\n<head>\n  <meta charset=\"UTF-8\">\n  <style>\n    body { font-family: 'Segoe UI', Arial, sans-serif; margin: 0; padding: 20px; background: #f0f4f8; }\n    .container { max-width: 680px; margin: auto; background: white; border-radius: 12px; overflow: hidden; box-shadow: 0 4px 20px rgba(0,0,0,0.1); }\n    .header { background: linear-gradient(135deg, #1a1a2e 0%, #16213e 50%, #0f3460 100%); color: white; padding: 32px 28px; }\n    .body { padding: 28px; }\n    .metric-grid { display: grid; grid-template-columns: 1fr 1fr 1fr; gap: 16px; margin: 20px 0; }\n    .metric-card { background: #f7fafc; border-radius: 8px; padding: 16px; text-align: center; border-top: 3px solid #4299e1; }\n    .metric-card .value { font-size: 22px; font-weight: bold; color: #2d3748; }\n    .metric-card .label { font-size: 12px; color: #718096; margin-top: 4px; }\n    .section-title { font-size: 16px; font-weight: bold; color: #2d3748; margin: 24px 0 12px 0; border-bottom: 2px solid #e2e8f0; padding-bottom: 8px; }\n    .footer { background: #2d3748; color: #a0aec0; padding: 16px 28px; font-size: 12px; text-align: center; }\n    .best-model-badge { background: #48bb78; color: white; border-radius: 6px; padding: 6px 14px; font-weight: bold; display: inline-block; }\n    .run-info { background: #ebf8ff; border: 1px solid #bee3f8; border-radius: 6px; padding: 12px 16px; font-size: 13px; color: #2c5282; margin: 16px 0; }\n  </style>\n</head>\n<body>\n  <div class=\"container\">\n    <div class=\"header\">\n      <h1 style=\"margin:0 0 6px 0;font-size:22px;\">🛒 Retail Sales Forecast Ready</h1>\n      <p style=\"margin:0;opacity:0.8;font-size:14px;\">Your dataset has been processed by the ML pipeline + sanT</p>\n    </div>\n    <div class=\"body\">\n      <p style=\"margin:0 0 8px 0;color:#718096;font-size:13px;\">🏆 BEST AUTO-SELECTED MODEL</p>\n      <span class=\"best-model-badge\">{{ $json.bestModel }}</span>\n      <div class=\"run-info\" style=\"margin-top:16px;\">\n        📊 Run ID: <strong>{{ $json.runId }}</strong> &nbsp;|&nbsp;\n        ⏱️ Completed in <strong>{{ $json.elapsedS }}s</strong> &nbsp;|&nbsp;\n        🖼️ <strong>{{ $json.chartCount }}</strong> chart(s) attached\n      </div>\n      <div class=\"metric-grid\">\n        <div class=\"metric-card\" style=\"border-top-color:#48bb78;\"><div class=\"value\">{{ $json.totalForecast }}</div><div class=\"label\">Total Forecast</div></div>\n        <div class=\"metric-card\" style=\"border-top-color:#4299e1;\"><div class=\"value\">{{ $json.avgForecast }}</div><div class=\"label\">Avg / Period</div></div>\n        <div class=\"metric-card\" style=\"border-top-color:#ed8936;\"><div class=\"value\">{{ $json.forecastPeriods }}</div><div class=\"label\">Periods Ahead</div></div>\n      </div>\n      <div class=\"run-info\">🗓️ Forecast Range: <strong>{{ $json.dateFrom }}</strong> → <strong>{{ $json.dateTo }}</strong></div>\n      \n      {{ $json.marketTrendHtml }}\n\n      {{ $json.recommendationsHtml ? `<div class=\"section-title\">🚀 Strategic Growth Recommendations</div>${$json.recommendationsHtml}` : '' }}\n\n      <div class=\"section-title\">📋 Model Leaderboard</div>\n      {{ $json.leaderboardHtml }}\n      \n      <div class=\"section-title\">📝 Full Summary</div>\n      <pre style=\"background:#f7fafc;padding:16px;border-radius:8px;font-size:12px;overflow:auto;white-space:pre-wrap;\">{{ $json.plainText }}</pre>\n      <p style=\"color:#718096;font-size:13px;margin-top:20px;\">📎Forecast chart images are attached to this email.</p>\n    </div>\n    <div class=\"footer\">\n      🤖 Retail Sales Forecasting Bot &nbsp;|&nbsp; Powered by n8n + ML Pipeline v2.0 + sanT<br>\n      Send a CSV with subject <code>forecast:quick:30</code> for a new forecast\n    </div>\n  </div>\n</body>\n</html>",
+        "options": {
+          "appendAttribution": false,
+          "attachmentsUi": {
+            "attachmentsBinary": [
+              {
+                "property": "={{ $json.attachments }}"
+              }
+            ]
+          }
+        }
+      },
+      "id": "9b329474-3e00-4a15-a0c1-1ac8c6ba2ce8",
+      "name": "Reply — Success with Charts",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        9312,
+        3952
+      ],
+      "webhookId": "6493dc9d-e4e1-48c6-9bb7-87101a31774d",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "xr06KshqT3EgAkyN",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "sendTo": "={{ $json.fromEmail }}",
+        "subject": "=Re: {{ $('Inspect Attachments').item.json.subject }} — ❌ Forecast Failed",
+        "message": "=<html><body style=\"font-family:Arial,sans-serif;padding:20px;background:#f9f9f9;\"><div style=\"background:white;border-radius:8px;padding:24px;max-width:600px;margin:auto;border-left:5px solid #e74c3c;\"><h2 style=\"color:#e74c3c;\">❌ Forecast Pipeline Failed</h2><p>Unfortunately, the ML pipeline encountered an error while processing your dataset.</p><h3>Error Details:</h3><pre style=\"background:#fff5f5;border:1px solid #fed7d7;padding:12px;border-radius:6px;overflow:auto;white-space:pre-wrap;font-size:12px;\">{{ $json.error || 'Unknown error occurred' }}</pre><h3>Common Fixes:</h3><ul><li>Ensure your CSV has a <strong>date column</strong> and a <strong>numeric sales column</strong></li><li>Your dataset needs at least <strong>20 data points</strong></li><li>Check date formats (YYYY-MM-DD works best)</li><li>Remove rows with missing values in key columns</li></ul><hr><p style=\"color:#888;font-size:12px;\">Run ID: {{ $json.run_id || 'N/A' }} | Retail Sales Forecasting Bot</p></div></body></html>",
+        "options": {}
+      },
+      "id": "e138d43a-d9df-45de-9f01-9403da479e52",
+      "name": "Reply — Pipeline Error",
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2,
+      "position": [
+        9312,
+        3728
+      ],
+      "webhookId": "cf0342af-aacc-4424-9eca-a05ac4822a4a",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "xr06KshqT3EgAkyN",
+          "name": "Gmail account"
+        }
+      }
+    },
+    {
+      "parameters": {
+        "operation": "markAsRead",
+        "messageId": "={{ $json.id }}"
+      },
+      "type": "n8n-nodes-base.gmail",
+      "typeVersion": 2.2,
+      "position": [
+        8576,
+        3856
+      ],
+      "id": "022dd69f-bf07-41c3-a1da-1dcc4a050e10",
+      "name": "Mark a message as read",
+      "webhookId": "cddcb125-8ccd-487c-b02d-9a69ecc04eb6",
+      "credentials": {
+        "gmailOAuth2": {
+          "id": "xr06KshqT3EgAkyN",
+          "name": "Gmail account"
+        }
+      }
+    }
+  ],
+  "pinData": {},
+  "connections": {
+    "Gmail Trigger": {
+      "main": [
+        [
+          {
+            "node": "Mark a message as read",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Inspect Attachments": {
+      "main": [
+        [
+          {
+            "node": "Has CSV Attachment?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Has CSV Attachment?": {
+      "main": [
+        [
+          {
+            "node": "Parse Email & Params",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply — No Attachment",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse Email & Params": {
+      "main": [
+        [
+          {
+            "node": "POST to Forecast API",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "POST to Forecast API": {
+      "main": [
+        [
+          {
+            "node": "Parse API Response",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Parse API Response": {
+      "main": [
+        [
+          {
+            "node": "API Success?",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "API Success?": {
+      "main": [
+        [
+          {
+            "node": "Prepare Chart List",
+            "type": "main",
+            "index": 0
+          }
+        ],
+        [
+          {
+            "node": "Reply — Pipeline Error",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Prepare Chart List": {
+      "main": [
+        [
+          {
+            "node": "Fetch Chart 1 (Forecast)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Chart 1 (Forecast)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Chart 2 (Comparison)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Chart 2 (Comparison)": {
+      "main": [
+        [
+          {
+            "node": "Fetch Chart 3 (Error Dist)",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Fetch Chart 3 (Error Dist)": {
+      "main": [
+        [
+          {
+            "node": "Build Email HTML Body",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Build Email HTML Body": {
+      "main": [
+        [
+          {
+            "node": "Reply — Success with Charts",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    },
+    "Mark a message as read": {
+      "main": [
+        [
+          {
+            "node": "Inspect Attachments",
+            "type": "main",
+            "index": 0
+          }
+        ]
+      ]
+    }
+  },
+  "active": true,
+  "settings": {
+    "executionOrder": "v1",
+    "binaryMode": "separate",
+    "timeSavedMode": "fixed",
+    "callerPolicy": "workflowsFromSameOwner",
+    "availableInMCP": false
+  },
+  "versionId": "48419c25-2a4b-4cee-af91-55eb362c9e8e",
+  "meta": {
+    "templateCredsSetupCompleted": true,
+    "instanceId": "c03f10d9321a60e95474f0e3d42d536adaedbc8c578694d1a977c019f3d59c78"
+  },
+  "id": "A3Jbe40grBj2Yuvx",
+  "tags": [
+    {
+      "updatedAt": "2026-04-04T16:32:04.819Z",
+      "createdAt": "2026-04-04T16:32:04.819Z",
+      "id": "vCThoO3klDOXMRVJ",
+      "name": "sanT_n8n"
+    }
+  ]
+}
