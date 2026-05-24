@@ -410,7 +410,6 @@ For issues, questions, or suggestions:
 
 ## 🎯 Roadmap
 
-- [ ] Web UI dashboard
 - [ ] Real-time predictions
 - [ ] Advanced anomaly detection
 - [ ] GPU acceleration support
