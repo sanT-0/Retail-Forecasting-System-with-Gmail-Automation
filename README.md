@@ -18,9 +18,9 @@ A comprehensive machine learning platform designed to predict future retail sale
 - [Usage](#-usage)
 - [Datasets](#-datasets)
 - [Models](#-models)
-- [Automation](#-Automationwithn8n)
-- [API](#-api)
-- [Configuration](#-configuration)
+- [Automation](#-automation-with-n8n)
+- [API](#-rest-api)
+- [Configuration](#️-configuration)
 - [Contributing](#-contributing)
 
 ---
