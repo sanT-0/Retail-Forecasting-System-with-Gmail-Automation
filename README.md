@@ -385,7 +385,7 @@ This project is licensed under the MIT License - see LICENSE file for details.
 ## 👨‍💻 Author
 
 **sanT** - Created this comprehensive retail sales forecasting platform.
-
+**Gmail** : santhoshsankar599@gmail.com
 ---
 
 ## 🤝 Contributing
@@ -406,7 +406,7 @@ For issues, questions, or suggestions:
 - Open an GitHub Issue
 - Check existing documentation
 - Run `diagnose.py` for system diagnostics
-
+- **Gmail** : santhoshsankar599@gmail.com
 ---
 
 ## 🎯 Roadmap
