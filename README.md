@@ -11,7 +11,7 @@ A comprehensive machine learning platform designed to predict future retail sale
 
 ## 📋 Table of Contents
 
-- [Features](#✨Features)
+- [Features](##Features)
 - [Project Structure](#project-structure)
 - [Installation](#installation)
 - [Quick Start](#quick-start)
